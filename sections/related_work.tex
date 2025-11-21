@@ -1,0 +1,148 @@
+\section{Related Work}
+
+Research on sound-field reconstruction from sparse measurements has produced a
+variety of models and kernel constructions, many of which exploit the
+structure of solutions to the Helmholtz equation or are based on physically
+motivated parametrizations.
+
+\subsection{Plane-Wave Representations}
+
+A classical representation of Helmholtz solutions is the plane-wave (Herglotz)
+expansion
+%
+\begin{equation}
+    u(x)
+    =
+    \int_{S^2} a(\eta)\, e^{ik\,\eta \cdot x}\, d\eta ,
+    \label{eq:rw-herglotz}
+\end{equation}
+%
+where $a(\eta)$ is a directional amplitude function.
+Many spatial audio and field-interpolation methods approximate
+\eqref{eq:rw-herglotz} using a finite set of directions
+$\{\eta_d\}_{d=1}^N$ and quadrature weights $\{\sigma_d\}_{d=1}^N$, leading to
+%
+\begin{equation}
+    u(x)
+    \approx
+    \sum_{d=1}^N \sigma_d\, e^{ik\,\eta_d \cdot x}.
+    \label{eq:rw-discretepw}
+\end{equation}
+%
+Such discrete plane-wave models form the basis of uniform kernels, neural
+plane-wave kernels, and residual models used in data-driven acoustics.
+
+\subsection{Isotropic and Bessel-Type Kernels}
+
+Integrating plane waves uniformly over the sphere yields an isotropic kernel
+that depends only on the distance $\|x-x'\|$:
+%
+\begin{equation}
+    \int_{S^2} e^{ik\,\eta\cdot(x-x')} d\eta
+    = 4\pi\, j_0(k\|x-x'\|),
+    \label{eq:rw-bessel}
+\end{equation}
+%
+where $j_0$ is the spherical Bessel function of order zero,
+%
+\[
+    j_0(t) = \frac{\sin t}{t}.
+\]
+%
+Related formulations employ the Bessel function of the first kind $J_0$, and
+in anisotropic settings the modified Bessel function $I_0$.
+These kernels are widely used in wave-field synthesis, near-field holography,
+and spatial filtering, as they provide rotationally symmetric reproducing
+kernels consistent with the Helmholtz equation.
+
+\subsection{Directional and Exponential Kernels}
+
+To extend isotropic models and represent anisotropic propagation, several
+works introduce \emph{directionally biased} kernels obtained by modifying the
+uniform (isotropic) plane-wave distribution with an exponential weight.  
+Starting from the uniform weight $w(\eta)=1$, one introduces the directional
+emphasis
+%
+\begin{equation}
+    w(\eta)
+    \;\propto\;
+    \exp\!\bigl(\beta\, \eta \cdot d\bigr),
+    \label{eq:rw-expweight}
+\end{equation}
+%
+where $d \in S^2$ is a preferred direction and $\beta>0$ controls how sharply
+the weight concentrates around $d$:
+%
+\begin{itemize}
+    \item when $\beta = 0$, $w(\eta)=1$ and the kernel reduces to the uniform
+          isotropic model;
+    \item as $\beta$ increases, directions $\eta$ aligned with $d$ are
+          exponentially amplified, while directions opposite to $d$ are
+          attenuated.
+\end{itemize}
+
+Thus, \eqref{eq:rw-expweight} acts as a tunable ``directional spotlight’’ on
+the sphere of propagation directions.  
+This idea naturally fits the physics of point-source radiation, where the
+wavefield exhibits stronger coherence along outward-propagating directions.
+
+When this weighted distribution is substituted into the Herglotz
+representation, the resulting kernel becomes a \emph{directionally biased}
+variant of the isotropic Bessel-type kernel.  
+A representative form arising in the literature is
+%
+\[
+    \kappa(x,x')
+    =
+    J_0\!\left(
+        \bigl\| k(x-x') - i\beta\,d \bigr\|
+    \right),
+\]
+%
+which can be interpreted as a complex-shifted Bessel function whose argument
+is displaced along the preferred direction $d$.  
+This complex displacement encodes the exponential weighting
+\eqref{eq:rw-expweight} and produces a kernel whose correlation is strongest
+along $d$ and decreases for directions orthogonal or opposite to it.
+
+Directional exponential kernels of this form have been widely used in
+sound-field control, directional beamforming, and propagation modeling in both
+free-field and room-acoustic scenarios, as they offer a principled mechanism
+for emphasizing a specific propagation direction while retaining the
+Helmholtz-compliant structure of Bessel-based kernels.
+
+
+\subsection{Learning-Based and Adaptive Kernels}
+
+Recent approaches propose to learn directional weights directly from data,
+often by modeling $a(\eta)$ or $w(\eta)$ with a neural network.
+In these methods, the kernel takes the form
+%
+\[
+    \kappa(x,x') =
+    \sum_{d=1}^N
+        \sigma_d\, W(k\eta_d)
+        e^{ik\,\eta_d\cdot(x-x')},
+\]
+where $W$ is a trainable positive function (typically an MLP).
+This strategy enables data-driven adaptation of directional patterns while
+preserving the Helmholtz structure of the kernel, and has shown promising
+performance for acoustic field reconstruction, especially in sparse or
+irregular microphone configurations.
+
+\subsection{Relation to the Present Work}
+
+The approaches above motivate the kernel families evaluated in this paper:
+%
+\begin{itemize}
+    \item \emph{uniform kernels} based on isotropic spherical Bessel functions,
+    \item \emph{directed kernels} obtained from exponential directional weights,
+    \item \emph{neural plane-wave kernels} that learn anisotropic weights 
+          from data,
+    \item and \emph{hybrid (directed + neural) kernels} combining strong
+          analytic directionality with learned residual components.
+\end{itemize}
+%
+All these kernels remain consistent with the Helmholtz equation through their
+plane-wave or Bessel-based construction, and their comparative performance in
+sound-field estimation is the primary focus of this study.

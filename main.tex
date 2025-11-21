@@ -1,0 +1,78 @@
+\documentclass[a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[italian]{babel}
+
+
+
+% Include any extra LaTeX packages required
+\usepackage{xurl}
+%\usepackage[hyphens]{url}
+\usepackage{hyperref}
+\hypersetup{breaklinks=true}
+
+%\usepackage{color}
+\usepackage[table,xcdraw,rgb,svgnames]{xcolor}
+\usepackage{fancyhdr}
+\usepackage{graphicx}
+\usepackage[T1]{fontenc}
+\usepackage[square, numbers, comma, sort&compress]{natbib}  % Use the "Natbib" style for the references in the Bibliography
+\usepackage{verbatim}  % Needed for the "comment" environment to make LaTeX comments
+%%\usepackage{vector}  % Allows "\bvec{}" and "\buvec{}" for "blackboard" style bold vectors in maths
+\definecolor{airforceblue}{rgb}{0.36, 0.54, 0.66}
+\definecolor{ForestGreen}{rgb}{0.13, 0.55, 0.13}
+\definecolor{orange}{rgb}{1.0, 0.5, 0.0}
+\definecolor{amethyst}{rgb}{0.6, 0.4, 0.8}
+\definecolor{awesome}{rgb}{1.0, 0.13, 0.32}
+\definecolor{chromeyellow}{rgb}{1.0, 0.65, 0.0}
+\hypersetup{colorlinks=true, linkcolor=amethyst, citecolor= ForestGreen, urlcolor=blue }  % Colours hyperlinks in blue, but this can be distracting if there are many links.
+\usepackage{quoting}
+\quotingsetup{font=small}
+\usepackage[output-decimal-marker={,}]{siunitx}
+\usepackage{amsfonts} % for the \checkmark command 
+\usepackage{listings}
+%\usepackage{chemformula}
+%\usepackage[newfloat]{minted} % Requires pygments to be installed (Python-based)
+\usepackage{sidecap}
+\usepackage{booktabs}
+\usepackage{multirow} 
+\usepackage{caption} 
+\usepackage{wrapfig} 
+\usepackage{lipsum}  
+\usepackage{subfig}  
+\usepackage{tabularx}  
+\usepackage{longtable}  
+\usepackage{microtype}
+\usepackage{amsmath}
+
+
+\newcommand{\vect}[1]{\mathbf{#1}}
+
+\title{Source-aware soundfield estimation based on Physics-constrained Kernel interpolation}
+\author{Mattia Marella}
+\begin{document}
+\maketitle
+\section{Introduction}
+Sound-field estimation aims at reconstructing the complex acoustic pressure 
+$p(\vect{x},\omega)$ in a region of space from a limited number of microphone measurements. This problem arises in spatial audio, sound-zone control, active noise control, and acoustic holography. When only few microphones are available, classical interpolation methods often suffer from spatial aliasing, poor generalization, and strong dependence on microphone placement.
+
+Physics-informed kernel methods provide a powerful alternative: instead of learning an arbitrary regression function, the estimator is constrained to satisfy (at least approximately) the Helmholtz equation, which governs monochromatic acoustic wave propagation:
+\[
+(\nabla^2 + k^2)p(\mathbf{x}) = 0, \quad k = \frac{\omega}{c}.
+\]
+Here, $k$ is the wavenumber, $\omega$ is the angular frequency, and $c$ is the speed of sound. 
+By incorporating this physical knowledge into the kernel design, these methods can achieve better accuracy and robustness with fewer measurements.
+
+\bigskip
+Koyama et al.\ introduced \emph{Physics-Constrained Neural Kernels} (PCNK), where the spatial kernel consists of a superposition of plane waves whose weights are produced by a neural network, but the kernel itself still satisfies the Helmholtz PDE\@. This hybrid approach combines (i) the universal approximation capability of neural networks, and (ii) strong physics priors that regularize learning and reduce overfitting.
+
+The work considered here extends this framework by making the kernel source-aware, meaning that the position of the sound source is explicitly incorporated into the kernel structure. The idea is that acoustic fields are not arbitrary solutions of the Helmholtz equation: they originate from actual sources, and their spatial characteristics (directivity, decay, wavefront orientation) depend on the relative geometry between source and receivers.
+So we want the kernel functions to take advantage of this additional information, in order to obtain superior generalization power.
+
+
+\input{sections/preliminaries.tex}
+\input{sections/related_work.tex}
+\input{sections/method.tex}
+\input{sections/experiment.tex}
+
+\end{document}

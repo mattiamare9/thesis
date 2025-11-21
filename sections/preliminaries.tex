@@ -1,0 +1,219 @@
+\section{Problem Statement and Preliminaries}
+This section introduces the notation, geometric assumptions, and mathematical
+background used throughout the kernel formulations.
+
+\bigskip
+
+We consider a three-dimensional region $\Omega \subset \mathbb{R}^3$ in which the acoustic field is assumed to be
+\emph{source-free}. Suppose also that there is an unknown number of
+sources outside of $\Omega$ generating sound waves that combine into a pressure distribution denoted as $u(\vect{x},k)$
+For a fixed angular frequency $\omega = 2\pi f$, the complex acoustic pressure field 
+$u(\vect{x},k) \in \mathbb{C}$ satisfies the homogeneous Helmholtz equation
+%
+\begin{equation}
+    \nabla^2 u(\vect{x},k) + k^2 u(\vect{x},k) = 0,
+    \qquad \forall x \in \Omega,
+    \label{eq:helmholtz}
+\end{equation}
+%
+where $k = \omega / c$ is the wavenumber and $c$ is the speed of sound.
+
+Our objective is to estimate the sound field $u(\vect{x},k)$ at any position $x \in \Omega$ from a \emph{snapshot}
+consisting of $M$ microphone measurements
+\[
+    \{s_m(k)\}_{m=1}^M, \qquad s_m(k) = u(\vect{x}_m,k),
+\]
+measured at known microphone positions $\{\vect{x}_m\}_{m=1}^M \subset \Omega$.
+An illustration of this problem setting is given in Fig.~1 of the original article.
+
+For notational simplicity, we omit $k$ from the arguments whenever no ambiguity arises.
+
+\subsection{Estimation Objective}
+
+Following the standard formulation in kernel-based sound field estimation, we seek an estimate
+$u \colon \Omega \to \mathbb{C}$ that minimizes the regularized empirical loss
+%
+\begin{equation}
+    L(u)
+    :=
+    \sum_{m=1}^M |s_m - u(\vect{x}_m)|^2
+    \;+\;
+    \lambda \lVert u \rVert_H^2,
+    \label{eq:loss}
+\end{equation}
+%
+where $\lambda > 0$ is a regularization constant, and $\|\cdot\|_H$ is the norm associated with a
+functional space $H$ to be defined.
+The estimator is therefore the unique minimizer
+%
+\begin{equation}
+    \hat{u}
+    =
+    \arg\min_{u \in H} L(u).
+    \label{eq:krr-solution}
+\end{equation}
+
+The choice of the space $H$ is crucial: it must encode the physical constraint
+\eqref{eq:helmholtz}, possess a well-defined norm, and allow tractable computation of
+$\hat{u}$. Moreover, we can guarantee a unique solution with a closed form if $H$ is
+a \emph{reproducing kernel Hilbert space} (RKHS).
+
+\subsection{Representation of Helmholtz Solutions}
+
+To ensure physical admissibility, the authors construct $H$ using the classical representation of 
+Helmholtz solutions as \emph{Herglotz wave functions}.
+Any solution $u$ of \eqref{eq:helmholtz} in a source-free region can be written as
+%
+\begin{equation}
+    u(\vect{x})
+    =
+    T(\tilde{u})
+    :=
+    \int_{S^2} e^{ik \eta \cdot \vec{x}} \tilde{u}(\eta) \, d\eta,
+    \label{eq:herglotz}
+\end{equation}
+%
+where $S^2$ denotes the unit sphere, $\eta \in S^2$ is a directional variable, and $\tilde{u}$ is a square-integrable
+function over the sphere (the \emph{directional representation} of $u$).
+This integral representation ensures that $u$ always satisfies the Helmholtz equation, since
+$(\nabla^2 + k^2)e^{ik\eta \cdot \vec{x}} = 0$ for every $\eta$.
+
+The authors introduce a \emph{weight function} $w \colon S^2 \to \mathbb{R}_{>0}$ and require
+%
+\begin{equation}
+    \int_{S^2}
+        \frac{|\tilde{u}(\eta)|^2}{w(\eta)} \, d\eta < \infty.
+    \label{eq:l2w}
+\end{equation}
+%
+In this case we write $\tilde{u} \in L^2(S^2, w)$.
+The weight $w$ plays an essential role in shaping the directional characteristics of the field
+and will later become the object to be \emph{adapted} from data.
+
+Using the mapping $T$ in \eqref{eq:herglotz}, the functional space is defined as
+%
+\begin{equation}
+    H
+    :=
+    \left\{
+        u = T(\tilde{u})
+        \;\big|\;
+        \tilde{u} \in L^2(S^2, w)
+    \right\}.
+    \label{eq:H-def}
+\end{equation}
+
+\subsection{Inner Product and Structure of the Space}
+
+Since $L^2(S^2, w)$ is a Hilbert space, the induced inner product on $H$ is
+%
+\begin{equation}
+    \langle u_1, u_2 \rangle_H
+    =
+    4\pi
+    \int_{S^2}
+        \frac{\tilde{u}_1(\eta)^{\ast}\tilde{u}_2(\eta)}
+             {w(\eta)}
+    \, d\eta.
+    \label{eq:inner-product}
+\end{equation}
+%
+The completeness of $H$ under this inner product follows from the proportionality between the
+norms of $T(\tilde{u})$ and $\tilde{u}$, proven in Appendix~B of the original paper.
+
+Importantly, for any continuous weight function $w$, the space $H$ is guaranteed to be a
+reproducing kernel Hilbert space (RKHS), which implies:
+1) the minimizer \eqref{eq:krr-solution} exists and is unique, and  
+2) the solution can be written via a kernel of the form $\kappa(\cdot, \vect{x}_m)$.
+
+The RKHS machinery itself is not detailed here, but its consequence is the kernel ridge regression
+form of the solution.
+
+
+
+\subsection{Kernel Ridge Regression Form}
+
+Once the functional space $H$ is chosen as in the previous subsection, the
+minimizer of \eqref{eq:loss} must belong to $H$ and must satisfy the
+Helmholtz equation by construction.  
+To guarantee the existence of a unique minimizer of \eqref{eq:krr-solution} and
+to obtain it in closed form, we require $H$ to be a reproducing kernel Hilbert
+space (RKHS).  
+This means that there exists a \emph{reproducing kernel}
+\(\kappa : \Omega \times \Omega \to \mathbb{C}\) such that
+%
+\begin{equation}
+    \langle \kappa(\cdot,\vect{x}), u \rangle_H = u(\vect{x}),
+    \qquad \forall\, \vect{x}\in\Omega,\ \forall\,u\in H.
+    \label{eq:rk-property}
+\end{equation}
+
+Under this assumption, the classical representer theorem ensures that the solution of
+\eqref{eq:krr-solution} is a finite linear combination of kernel sections
+evaluated at the microphone positions.  
+Hence, the estimated sound field $\hat u$ can be written as
+%
+\begin{equation}
+    \hat{u}(\vect{x})
+    =
+    \sum_{m=1}^M \alpha_m\, \kappa(\vect{x},\vect{x}_m)
+    =
+    \kappa(\vect{x})\,\vect{\alpha},
+    \label{eq:krr-estimator}
+\end{equation}
+%
+where the vector of coefficients $\vect{\alpha} = [\alpha_1,\dots,\alpha_M]^\top$
+depends solely on the microphone measurements.  Here we use the shorthand
+%
+\[
+    \kappa(\vect{x})
+    :=
+    \bigl[\kappa(\vect{x},\vect{x}_1),\dots,\kappa(\vect{x},\vect{x}_M)\bigr].
+\]
+
+Substituting this form into the loss function \eqref{eq:loss} yields the
+standard kernel ridge regression (KRR) linear system.  
+We define the Gram matrix
+%
+\begin{equation}
+    \vect{K} \in \mathbb{C}^{M \times M}, \qquad
+    K_{mn} = \kappa(\vect{x}_m, \vect{x}_n),
+    \label{eq:gram-matrix}
+\end{equation}
+%
+and the measurement vector
+%
+\[
+    s = [s_1,\dots,s_M]^\top.
+\]
+
+Then the coefficients $\vect{\alpha}$ minimizing~\eqref{eq:loss} are given by
+%
+\begin{equation}
+    \vect{\alpha}
+    =
+    (\vect{K} + \lambda I)^{-1} s.
+    \label{eq:krr-solution-alpha}
+\end{equation}
+
+Combining \eqref{eq:krr-estimator} and \eqref{eq:krr-solution-alpha}, the
+resulting KRR estimate is
+%
+\begin{equation}
+    \hat{u}(\vect{x})
+    =
+    \kappa(\vect{x})\,(\vect{K}+\lambda I)^{-1}s.
+    \label{eq:krr-final}
+\end{equation}
+
+Physically, the kernel $\kappa$ encodes the directional and structural
+properties of all admissible sound fields in the space $H$, while the Gram
+matrix $\vect{K}$ expresses the pairwise similarity of microphone observations under
+that model.  
+Thus, once $\kappa$ is chosen (i.e., equivalently, once the weight function $w$
+determining the kernel is set) sound-field reconstruction reduces to solving a
+single linear system \eqref{eq:krr-solution-alpha}.  
+In the remainder of this manuscript, the focus is on designing and comparing
+different physically motivated kernels $\kappa$ and investigating how well
+each one models the spatial structure of the true sound field.
+

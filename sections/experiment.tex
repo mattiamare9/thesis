@@ -1,0 +1,238 @@
+
+\section{Initial Experimental Setup}
+
+This section describes the numerical setup used to compare the kernel
+constructions introduced in the previous sections.  All experiments are performed independently for each frequency. 
+The aim is to evaluate how accurately each kernel reconstructs the acoustic field throughout the
+validation region, given sparse pressure measurements on a microphone array.
+
+\subsection{Measurement Geometry}
+
+We consider a source located at a fixed position $x_s\in\mathbb{R}^3$.
+Microphone measurements are collected at $M$ receiver positions
+\[
+    X = \{x_1,\ldots,x_M\} \subset \Omega,
+\]
+forming the \emph{training set}.  These microphones lie on a spherical
+measurement surface (see~\ref{fig:microphones}).  For evaluation, an additional
+set of $M_v$ positions
+\[
+    X_v = \{x^{(v)}_1,\ldots,x^{(v)}_{M_v}\}
+\]
+is placed inside the spherical surface, forming the \emph{validation set}.
+This two-region configuration assesses the ability of each kernel to
+extrapolate the field into an interior region not covered by the
+measurements.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=.98\textwidth]{figures/spherical_array.png}
+    \caption{Illustration of the microphone array geometry used in experiments.}
+    \label{fig:microphones}
+\end{figure}
+
+
+When available, a dense Cartesian grid 
+$\{x_g\}_{g=1}^G$ is used for visualization of the reconstructed magnitude
+field and for qualitative inspection of spatial artifacts.
+
+\subsection{Frequencies and Data}
+
+Experiments are performed at discrete frequencies
+\[
+    \{f_1,\ldots,f_F\},
+    \qquad
+    k_f = \frac{2\pi f}{c}
+\]
+For each frequency $f$, the complex pressure measurements
+\[
+    s_m(f) = u(x_m, k_f)
+\]
+are obtained from the dataset contained in the provided HDF5 file, which
+includes:
+\begin{itemize}
+    \item the discrete frequencies array,
+    \item the training microphone positions $X$,
+    \item the validation microphone positions $X_v$,
+    \item the training pressures on $X$,
+    \item the validation pressures on $X_v$,
+    \item (optionally) the ground-truth field on a dense grid.
+\end{itemize}
+
+To match the measurement conditions described in the reference, additive
+Gaussian noise is injected into the training data at a prescribed signal-to-noise
+ratio (SNR).  The validation and grid data remain noise-free.
+
+\subsection{Kernel Constructions}
+
+Four kernel families are evaluated:
+
+\paragraph{1) Uniform kernel.}
+Isotropic, derived from the spherical Bessel function
+$j_0(k\|x-x'\|)$, corresponding to uniform weighting on the sphere.
+
+\paragraph{2) Directed kernel.}
+Source-aware kernel with exponential directional weighting, 
+leading to complex-argument Bessel functions of the form
+$J_0(\|k(x-x') - i\beta d\|)$.
+
+\paragraph{3) Neural plane-wave kernel.}
+Data-driven kernel whose weights are modulated by a neural network
+$W(k\eta_d)$ acting on plane-wave directions.
+
+\paragraph{4) Proposed hybrid kernel.}
+Sum of the directed analytical component and a neural residual plane-wave
+component.
+
+Each kernel is instantiated independently at each frequency using the
+corresponding wavenumber $k_f$.
+
+\subsection{Training Procedure and Optimization Methods}
+
+For each frequency, the parameters of the kernel are optimized by minimizing
+the leave-one-out (LOO) objective introduced in the original formulation.
+The LOO loss evaluates the predictive performance obtained when each training
+microphone is virtually removed in turn, thereby providing a robust,
+data-driven criterion for tuning the kernel parameters without requiring an
+explicit validation set during training.
+
+Because different kernels contain different types of parameters and structural
+constraints, two classes of optimization algorithms are employed.
+
+\paragraph{LBFGS for unconstrained neural parameters.}
+
+The uniform kernel contains no trainable parameters, while the PCNK kernel
+includes only neural plane-wave weights, which are free real-valued
+parameters apart from a simple non-negativity condition.  
+For such smooth, unconstrained problems, a quasi-Newton method such as LBFGS
+is highly effective.  
+LBFGS estimates curvature information from past gradients, resulting in rapid
+convergence even for moderately sized neural parametrizations.  
+This choice mirrors the original SPM implementation, in which LBFGS is used
+whenever the kernel parameters live in an unconstrained Euclidean space.
+
+\paragraph{IP-based Newton methods for constrained analytical parameters.}
+
+The directed kernel and the proposed hybrid kernel contain analytical
+directional weights that must satisfy specific structural constraints, such
+as non-negativity and a simplex condition (the weights must sum to one).  
+These constraints arise naturally from the underlying physical model: the
+analytical part of the kernel represents a mixture of directional components,
+and therefore must behave as a normalized distribution over directions.
+
+To handle these constraints consistently, the training of these kernels uses
+an interior-point Newton method (IPNewton).  
+This method enforces equality and inequality constraints through barrier
+functions and solves a sequence of Newton systems that remain within the
+feasible region.  
+It is particularly well suited for problems where a subset of parameters must
+stay strictly positive or lie on a simplex, and where curvature information
+is essential for stability.
+
+\paragraph{Rationale for the two-optimizer strategy.}
+
+The combination of LBFGS and IPNewton reflects the heterogeneous nature of
+the kernel families:
+
+\begin{itemize}
+    \item Neural residual components are flexible, unconstrained, and smooth:
+          \(\Rightarrow\) LBFGS is efficient and reliable.
+
+    \item Analytical directional components represent probability-like
+          weights with physically meaningful constraints:
+          \(\Rightarrow\) constrained Newton methods are required.
+
+    \item Hybrid kernels inherit both structures, and IPNewton ensures that
+          the analytical part remains valid while still allowing neural terms
+          to adapt freely.
+\end{itemize}
+
+This separation of optimization roles mirrors the structure of the original
+methodology and ensures that each kernel is trained under the most
+appropriate numerical strategy for its parameterization.  
+By relying on second-order information (either approximated or exact), both
+optimizers achieve stable convergence across frequencies, enabling a fair and
+consistent comparison between the kernel families evaluated in this work.
+
+In all cases, the loss function is the frequency-wise LOO objective:
+\[
+    L_{\mathrm{LOO}}
+    =
+    \sum_{m=1}^{M}
+    \left|
+        \frac{\alpha_{f,m}}
+        {[\operatorname{diag}(A_f^{-1})]_{m}}
+    \right|^2,
+\]
+where
+\[
+    A_f = K_f + \lambda R_f,
+\]
+with $K_f$ the Gram matrix and $R_f$ the regularizer derived from the
+directional and/or neural components of the kernel.
+
+\paragraph{Meaning of the regularization terms.}
+
+The regularization in the original formulation does not arise from an external
+hyperparameter added to the loss, but is instead a \emph{model-internal} term
+that emerges naturally from the structure of the kernel.  
+Each kernel contains directional weights, analytical or neural, that determine
+how strongly individual plane-wave components contribute to the field.  
+These weights enter the reproducing kernel through the integral
+representation and give rise to two scalar quantities:
+%
+\begin{align}
+    \mathrm{reg}_a &= \sum_{d} \sigma^{(a)}_d, \\
+    \mathrm{reg}_n &= \sum_{d} \sigma^{(n)}_d \, W(k\eta_d),
+\end{align}
+%
+where $\sigma^{(a)}_d$ are the analytical (directed) mixture weights and
+$\sigma^{(n)}_d W(k\eta_d)$ are the neural residual weights.  
+In the original theory, these sums correspond to the squared $H$-norm of the
+function in the underlying Herglotz-based RKHS.  
+Thus, they represent the \emph{intrinsic smoothness} or \emph{energy} of the
+function class modeled by the kernel.
+
+During training, these quantities appear in the expression
+\[
+    A_f = K_f + \lambda (\mathrm{reg}_a + \mathrm{reg}_n) I,
+\]
+where the scalar $\lambda>0$ modulates the influence of the RKHS norm on the
+estimator.  
+Because $\mathrm{reg}_a$ and $\mathrm{reg}_n$ depend on the kernel
+parameters, the regularization term becomes part of the optimization
+objective, acting as a natural penalty that discourages excessively large
+weights and enforces physically meaningful directional distributions.
+
+This explains why the same $\lambda$ is used across all kernels: the term
+$\mathrm{reg}_a + \mathrm{reg}_n$ already adapts to the structure and
+parametrization of each kernel family, making the regularization
+\emph{kernel-aware} rather than manually tuned.
+
+
+\subsection{Field Reconstruction}
+
+Once training is complete at frequency $f$, the reconstructed field is
+evaluated at the validation positions by
+\[
+    \hat u_f(x^{(v)}_m)
+    =
+    \sum_{n=1}^M \alpha_{f,n}\,\kappa_f(x^{(v)}_m, x_n).
+\]
+
+When the dataset provides a pointwise reference field on a rectangular grid,
+the same expression is used to generate 2-D field maps, enabling visual
+comparison among kernels in terms of spatial smoothness, wavefront shape, and
+extrapolation behavior.
+
+\subsection{Evaluation Metric}
+
+Quantitative accuracy is measured using the normalized mean squared error
+(NMSE) defined in Section~\ref{eq:nmse}.  
+For each frequency, NMSE is computed between the ground-truth validation
+pressures and the reconstructed values.  This yields an NMSE curve as a
+function of frequency for every kernel family.
+
+These curves serve as the primary numerical indicator of reconstruction
+quality and are used to compare the kernels under identical geometric and measurement conditions.
+

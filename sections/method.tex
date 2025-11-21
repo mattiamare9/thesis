@@ -1,0 +1,100 @@
+\section{Evaluation Metric}
+
+To quantitatively assess the accuracy of the reconstructed sound field, we
+employ the \emph{Normalized Mean Squared Error} (NMSE), a widely used metric
+in acoustic field estimation, spatial audio, and inverse problems.  NMSE
+measures the relative discrepancy between the reconstructed complex pressure
+and the ground-truth reference field.
+
+\subsection{Definition}
+
+Let $u_{\mathrm{ref}}(x)$ denote the reference sound field and
+$\hat u(x)$ the estimated field, both evaluated at a set of validation
+positions $\{x_m^{(v)}\}_{m=1}^{M_v}$.  
+The NMSE is defined as
+%
+\begin{equation}
+    \mathrm{NMSE}
+    =
+    \frac{
+        \sum_{m=1}^{M_v}
+        \bigl|
+            u_{\mathrm{ref}}(x_m^{(v)})
+            -
+            \hat u(x_m^{(v)})
+        \bigr|^2
+    }{
+        \sum_{m=1}^{M_v}
+        \bigl|
+            u_{\mathrm{ref}}(x_m^{(v)})
+        \bigr|^2
+        + \epsilon
+    },
+    \label{eq:nmse}
+\end{equation}
+%
+where $\epsilon>0$ is a small constant included only to avoid division by zero
+in degenerate cases.  
+The numerator corresponds to the reconstruction error, while the denominator
+normalizes the value by the total energy of the true sound field.
+
+For reporting convenience, NMSE values are often expressed in decibels:
+%
+\begin{equation}
+    \mathrm{NMSE}_{\mathrm{dB}}
+    = 10 \log_{10}(\mathrm{NMSE}).
+    \label{eq:nmse-db}
+\end{equation}
+
+\subsection{Why NMSE for Acoustic Pressure Fields?}
+
+NMSE is particularly well suited for evaluating complex acoustic pressure
+fields for several reasons:
+
+\paragraph{1) Scale invariance.}
+The denominator normalizes by the energy of the reference field.  
+This ensures that the metric is unaffected by the absolute amplitude of the
+sound pressure, which may vary with frequency, microphone configuration, or
+source–receiver distance.  
+Thus, NMSE allows fair comparison across frequencies and across distinct
+kernels.
+
+\paragraph{2) Physically meaningful for complex-valued fields.}
+Acoustic pressures are complex quantities, encoding both magnitude and phase.
+The squared modulus
+\(
+|u_{\mathrm{ref}}(x) - \hat u(x)|^2
+\)
+captures phase errors and amplitude errors simultaneously, and therefore
+quantifies the discrepancy in the physically relevant quantity.
+
+\paragraph{3) Robustness across heterogeneous validation geometries.}
+In many sound-field estimation tasks, validation microphones are placed in
+regions with different energy levels (e.g.\ inside vs.\ outside measurement
+surfaces).  
+By normalizing by $\|u_{\mathrm{ref}}\|^2$, NMSE remains comparable across
+evaluation regions with different field magnitudes.
+
+\medskip
+
+Moreover, NMSE has been adopted extensively in the spatial acoustics literature,
+including spherical harmonics interpolation, Herglotz-based reconstructions,
+plane-wave decomposition methods, and prior kernel-based approaches.  
+Using NMSE thus allows direct comparison with related methods.
+
+\subsection{Interpretation}
+
+An NMSE of $0$ corresponds to perfect reconstruction, while larger values
+indicate poorer accuracy.  
+Expressed in decibels, negative NMSE values (e.g.\ $-15$~dB) indicate that the
+error power is much smaller than the signal power, whereas values close to
+0~dB suggest errors comparable to the signal itself.
+
+Since NMSE aggregates errors over all validation points, it provides a global
+measure of reconstruction quality, sensitive to global shape accuracy of the wavefront.
+
+For these reasons, NMSE serves as a principled and physically meaningful
+metric for comparing the uniform, directed, neural, and hybrid kernels
+investigated in this work.
+
+
