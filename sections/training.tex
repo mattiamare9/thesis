@@ -1,0 +1,287 @@
+\section{Training Procedures}
+
+In this section we describe in detail how the kernels are trained in the
+original single-source implementation and in the new
+multi-source, source-aware Python implementation.
+In both cases, the goal is to adapt the kernel parameters so as to minimize
+the leave-one-out (LOO) prediction error at the microphone positions, under
+the Helmholtz-consistent kernel ridge regression framework introduced in the
+previous sections.
+
+\subsection{Single-Source Training (Julia)}
+
+In the original code, training is carried out \emph{separately for each
+frequency} and for each kernel type.
+The source is \textbf{always external} to the measurement region (this is a key assumption
+since it keeps homogeneous the Helmholtz equation), and a single set of
+microphones is used for both training and evaluation, with a train/test split.
+For a fixed frequency $f$ with wavenumber $k_f$, and a chosen kernel family
+$\kappa_{\theta}$ parametrized by $\theta$, the training problem can be
+written schematically as
+%
+\begin{equation}
+    \theta^\star(f)
+    = \arg\min_{\theta}\,
+      L_{\mathrm{LOO}}(\theta; f),
+    \label{eq:train-julia}
+\end{equation}
+%
+where $L_{\mathrm{LOO}}$ is the closed-form leave-one-out loss derived from
+the KRR solution.
+
+Given the Gram matrix $K_f(\theta)$ and the regularization terms
+$\mathrm{reg}_a(\theta)$ and $\mathrm{reg}_n(\theta)$, the regularized system 
+matrix is constructed as
+%
+\[
+    A_f(\theta)
+    = K_f(\theta) + \lambda\bigl(\mathrm{reg}_a(\theta)
+                               + \mathrm{reg}_n(\theta)\bigr) I,
+\]
+%
+and expresses the LOO loss using the diagonal of $A_f(\theta)^{-1}$ and the
+KRR coefficients $\alpha_f(\theta)$.
+This yields a scalar objective $L_{\mathrm{LOO}}(\theta; f)$ that is smooth
+with respect to $\theta$.
+
+Different kernel families induce different parameterizations and
+constraints:
+%
+\begin{itemize}
+    \item \textbf{Uniform kernel.}
+          Has no trainable parameters; $L_{\mathrm{LOO}}$ is evaluated only
+          once and serves as a baseline.
+
+    \item \textbf{Neural plane-wave kernel (PCNK).}
+          The parameters $\theta$ are the weights and biases of the neural
+          network $W$ that modulates the plane-wave amplitudes.
+          These parameters are unconstrained real numbers (up to the
+          non-negativity enforced by the final activation), so
+          $L_{\mathrm{LOO}}(\theta; f)$ is minimized using an unconstrained
+          quasi-Newton method (LBFGS).
+
+    \item \textbf{Directed and hybrid kernels.}
+          Besides possible neural parameters, these kernels contain
+          analytical directional weights that form a simplex:
+          they must be non-negative and sum to one.
+          As a result, $\theta$ lives in a constrained domain.
+          In the original Julia code, these constraints are handled
+          explicitly via an interior-point Newton method (IPNewton), which
+          enforces the simplex constraints while minimizing $L_{\mathrm{LOO}}$.
+\end{itemize}
+
+For each frequency and kernel, the optimizer (LBFGS or IPNewton, depending on
+the parameterization) is run until convergence of $L_{\mathrm{LOO}}$.
+Once the optimizer has converged, the resulting parameters
+$\theta^\star(f)$ define the kernel $\kappa_{\theta^\star(f)}$ for
+frequency $f$.  
+These parameters are then used to compute the KRR coefficients based on the
+\emph{training microphones} only.  
+In the single-source setup, the microphone array is intentionally split
+into two sets with very different sizes:
+
+\begin{itemize}
+    \item a \textbf{small set of training microphones}, placed on a
+          spherical surface.  
+          These represent the practically affordable sensing setup: in
+          real applications the number of microphones is limited, so the
+          model must be able to reconstruct the sound field from a sparse
+          set of measurements.
+
+    \item a \textbf{much larger set of test}
+          microphones, located inside the spherical surface.  
+          These dense interior measurements are used \emph{only for
+          evaluation} to assess how accurately the trained kernel
+          reconstructs the field in space.
+\end{itemize}
+
+After solving the regularized linear system
+%
+\[
+    \alpha_f
+    =
+    \bigl(K_f(\theta^\star(f))
+      + \lambda(\mathrm{reg}_a+\mathrm{reg}_n) I\bigr)^{-1}
+      s_f,
+\]
+%
+where $s_f$ contains the training pressures at frequency $f$, the estimator
+%
+\[
+    \hat u_f(x)
+    =
+    \sum_{m=1}^{M_{\mathrm{train}}}
+        \alpha_{f,m}\,
+        \kappa_{\theta^\star(f)}(x, x_m)
+\]
+%
+is evaluated at the \emph{validation microphones}.  
+These microphones are never used during optimization: they serve solely to
+quantify reconstruction performance.
+
+The reconstruction error is measured via the normalized mean squared error
+(NMSE), computed between $\hat u_f$ and the ground-truth field on the dense
+validation set.  
+
+
+\subsection{Multi-Source Training in the Source-Aware Python Implementation}
+
+The new Python implementation extends the original SPM framework in two
+directions:
+(i) it introduces \emph{source-aware kernels} whose parameters depend
+explicitly on the source position; and
+(ii) it trains these kernels on \emph{multiple source datasets} with an
+explicit train/validation/test split.
+This is implemented in the function \texttt{run\_spm\_multisource}, whose
+logic we now describe in detail.
+
+\subsubsection{Source-Level Train/Validation/Test Split}
+
+The input directory contains one HDF5 file per source, each file providing:
+the source position $x_s$, the receiver positions $X$ and $X_v$, and the
+frequency-dependent pressures (train and validation).
+If there are $N$ sources, the code first generates a random permutation of
+$\{1,\dots,N\}$ and assigns the corresponding HDF5 files to three disjoint
+sets:
+%
+\begin{itemize}
+    \item a \emph{training set} of sources (comprising 80\% of the files),
+    \item a \emph{validation set} of sources (comprising 10\% of the files),
+    \item a \emph{test set} of sources (remaining files).
+\end{itemize}
+
+This means that, unlike the original SPM, the model is encouraged to learn
+kernel parameters that generalize \emph{across different source positions and
+room realizations}, not only across microphones for a single source.
+
+\subsubsection{Per-Frequency Kernel Instantiation}
+
+The frequency axis is read from the first training file.
+For each frequency $f$ with wavenumber $k_f$, and for each kernel type, the code:
+
+\begin{enumerate}
+    \item instantiates a fresh kernel object
+          $\kappa_{\theta_f}$ via the provided factory function,
+          with wavenumber set to $k_f$;
+    \item initializes a record of the best parameters according to
+          validation loss (early stopping).
+\end{enumerate}
+
+Thus, the training remains frequency-wise, but now each kernel at frequency
+$f$ is trained on \emph{many} sources.
+
+\subsubsection{Epoch Loop and Shuffled Source Order}
+
+Training proceeds for a fixed number of epochs, before early stopping gets triggered.
+At each epoch:
+
+\begin{enumerate}
+    \item The list of training source files is randomly shuffled.
+    \item For each training source in this shuffled order:
+          \begin{enumerate}
+              \item The receiver positions $X$ and complex pressures
+                    $Y_f$ at frequency index $f$ are loaded.
+              \item Additive white Gaussian noise with prescribed SNR
+                    is added to $Y_f$ to emulate
+                    noisy measurements; this is done \emph{only} on the
+                    training sources.
+              \item The kernel is informed of the source position $x_s$.
+              \item A short optimization run is performed on this
+                    source:
+                    depending on the configuration, either
+                    \begin{itemize}
+                        \item \textbf{Adam} is used, with a fixed
+                              number of gradient steps, or
+                        \item \textbf{LBFGS} is used,
+                              where LBFGS is run for a small number 
+                              of iterations.
+                    \end{itemize}
+                    In both cases, the objective being minimized is the
+                    same LOO-based loss used in the original formulation,
+                    but now evaluated on the current source dataset.
+                    The kernel parameters $\theta_f$ are updated
+                    \emph{in place} after each source, so over one
+                    epoch the kernel gradually adapts to all sources in
+                    the training set.
+          \end{enumerate}
+\end{enumerate}
+
+This training scheme can be seen as a form of mini-batch optimization
+where each ``batch'' consists of all microphones for a single source.
+The shuffling at each epoch prevents the optimizer from overfitting to
+a fixed source order and improves robustness.
+
+\subsubsection{Validation-Based Early Stopping Across Sources}
+
+At the end of each epoch, the kernel is evaluated on the \emph{validation}
+sources, which were never used for parameter updates.
+For each validation source:
+
+\begin{enumerate}
+    \item The corresponding $X$ and $Y_f$ are loaded (without noise).
+    \item The source position is passed to the kernel.
+    \item The LOO loss is computed using the current kernel parameters,
+          but without performing gradient updates.
+\end{enumerate}
+
+The average validation LOO loss over all validation sources is then recorded.
+If this average loss is lower than the best value observed so far, the
+current kernel state is saved as the \emph{best} model for that frequency.
+This implements an early-stopping-like mechanism: even though the number of
+epochs is fixed, the final model used for testing is the one that performed
+best on unseen validation sources.
+
+\subsubsection{Test-Time Reconstruction and NMSE}
+
+After training at frequency $f$ is complete, the kernel parameters are
+restored to the best validation state.
+The model is then evaluated on the \emph{test} sources:
+
+\begin{enumerate}
+    \item For each test source, $X$, $X_v$, and the corresponding
+          pressures $Y_f$ and $Y_v$ are loaded.
+    \item The kernel is updated with the source position
+          $x_s$.
+    \item The Gram matrix $K_f$ on the training microphones is built,
+          regularized using the current regularization term, and the
+          KRR coefficients $\alpha_f$ are computed by solving the
+          linear system.
+    \item The field is reconstructed at the test microphones:
+          $\hat u_f(x^{(v)}_m)$ for all $m$.
+    \item The NMSE between $\hat u_f$ and $u_{\mathrm{ref}}$ on the
+          test microphones is computed for that source.
+\end{enumerate}
+
+The NMSE values are then averaged over all test sources to yield a
+frequency-dependent NMSE curve for each kernel.
+These curves summarize the ability of each kernel to generalize
+\emph{across both space and sources}.
+
+\subsubsection{Summary of Differences w.r.t.\ the Original code}
+
+Compared to the original single-source training, the new Python
+implementation introduces:
+
+\begin{itemize}
+    \item a \textbf{multi-source} perspective, where a single set of
+          kernel parameters must account for many different source
+          positions;
+
+    \item an explicit \textbf{train/validation/test split at the
+          source level}, enabling validation-based model selection and
+          unbiased test evaluation;
+
+    \item \textbf{epoch-based optimization} with shuffled sources,
+          using Adam or incremental LBFGS, which gradually refines the
+          kernel over many source realizations;
+
+    \item explicit \textbf{source-aware training}, in the sense that
+          the kernel is always informed of the current source position
+          before each optimization or evaluation step.
+\end{itemize}
+
+In this way, the Python framework preserves the Helmholtz-consistent
+LOO training principle of the original SPM method, while extending it to a
+more realistic and challenging multi-source scenario.
+
+
